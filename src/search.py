@@ -8,26 +8,28 @@ from io import StringIO
 
 def allOfCategory(category):
     try:
-        output = subprocess.check_output(['calibredb', 'list_categories', '-c', '-r', category])
+        output = str(
+            subprocess.check_output(['calibredb', 'list_categories', '-c', '-r', category]),
+            'utf-8'
+        )
 
-        outputStr = str(output, 'utf-8')
-
-        if len(outputStr.splitlines()) == 2:
+        if len(output.splitlines()) == 2:
             return []
 
-        authorsCsv = StringIO(outputStr[:-1])
-
-        reader = csv.reader(authorsCsv, delimiter=',')
+        # -1 because calibredb adds a newline on the end
+        csv = StringIO(output[:-1])
+        reader = csv.reader(csv, delimiter=",")
 
         result = []
         for row in reader:
             result.append(row[1])
 
         return result[1:]
+
     except:
         return []
 
-def search(searchStr):
+def __callSearch(searchStr):
     try:
         result = subprocess.check_output(['calibredb', 'list', '--sort-by=title', '-f all', '--for-machine', '-s', searchStr])
 
@@ -35,55 +37,41 @@ def search(searchStr):
     except:
         return []
 
-def processPathSection(key, val):
-    if key == 'authors':
-        return f'author:={val}'
-    elif key == 'tags':
-        return f'tag:={val}'
-
-def constructSearchString(path):
+def __constructSearchString(path):
     splitPath = path.split('/')
     pairs = list(zip(splitPath[::2], splitPath[1::2]))
     searchString = ""
 
     for key, val in pairs:
-        searchString += processPathSection(key, val)
-        searchString += " "
+        if key == 'authors':
+            searchString += f'author:="{val}" '
+        elif key == 'tags':
+            searchString += f'tag:="{val}" '
 
     return searchString
 
-def getInfoFromSearch(books):
-    def addBookToSet(val, book):
-        if val != None:
-            val.add(book['title'])
-        else:
-            val = set([book['title']])
-        return val
+def __addBookToSet(val, book):
+    if val != None:
+        val.add(book['title'])
+    else:
+        val = set([book['title']])
+    return val
 
-
+def __getInfoFromSearch(books):
     allAuthors = {}
     allTags = {}
 
     for book in books:
-        authors = book['authors']
-        tags = book['tags']
+        for author in book['authors'].split(' & '):
+            allAuthors[author] = __addBookToSet(allAuthors.get(author), book)
 
-        if '&' in authors:
-            authorList = authors.split(' & ')
-            for author in authorList:
-                allAuthors[author] = addBookToSet(allAuthors.get(author), book)
-        else:
-            allAuthors[authors] = addBookToSet(allAuthors.get(authors), book)
-
-        if len(tags) > 0:
-            for tag in tags:
-                allTags[tag] = addBookToSet(allTags.get(tag), book)
-
-    print(allAuthors.keys())
-    print(allTags.keys())
+        for tag in book['tags']:
+            allTags[tag] = __addBookToSet(allTags.get(tag), book)
 
     return {
         'authors': allAuthors,
         'tags': allTags
     }
 
+def search(path):
+    return __getInfoFromSearch(__callSearch(__constructSearchString(path)))
