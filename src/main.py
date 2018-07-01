@@ -71,20 +71,27 @@ class EbookFS(Fuse):
              return -errno.ENOENT
         return st
 
-    def info_dir(self, path, end_match):
+    def get_books(self, path):
+        dirs = []
+        results = search(path)
+
+        dirs = results.pop('books', [])
+
+        # if len(results['authors'].keys()) > 1:
+        #     dirs.append('authors')
+        # if len(results['tags'].keys()) > 0:
+        #     dirs.append('tags')
+
+        return dirs
+
+
+    def info_dir(self, path):
         dirs = []
 
         results = search(path)
-        dirs.extend(results.pop('books', []))
 
-        if end_match:
-            split_path = path.split('/')[1:]
-            dirs.extend(results[split_path[-2]].keys())
-        else:
-            if len(results['authors'].keys()) > 1:
-                dirs.append('authors')
-            if len(results['tags'].keys()) > 0:
-                dirs.append('tags')
+        split_path = path.split('/')[1:] # /authors
+        dirs.extend(results[split_path[-1]].keys())
 
         return dirs
 
@@ -96,10 +103,11 @@ class EbookFS(Fuse):
             dirs.extend(self.base_dir)
         elif len(split_path) == 1 and split_path[0] in self.base_dir:
             dirs.extend(self.categories[split_path[0]])
-        elif split_path[-2] in self.base_dir:
-            dirs.extend(self.info_dir(path, False))
-        elif split_path[-1] in self.base_dir:
-            dirs.extend(self.info_dir(path, True))
+        elif split_path[-2] in self.base_dir: # /authors/name
+            dirs.extend(self.get_books(path))
+        elif split_path[-1] in self.base_dir: # /authors
+            # dirs.extend(self.info_dir(path, True))
+            pass
         else:
             pass
 

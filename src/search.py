@@ -31,13 +31,21 @@ def allOfCategory(category):
         print(e)
         return []
 
-@lru_cache(256)
 def __callSearch(searchStr):
     try:
-        result = subprocess.check_output(['calibredb', 'list', '--sort-by=title', '-f all', '--for-machine', '-s', searchStr])
+        result = subprocess.check_output([
+            'calibredb',
+            'list',
+            '--sort-by=title',
+            '-f title,authors,tags,formats',
+            '--for-machine',
+            '-s',
+            searchStr
+        ])
 
         return json.loads(str(result, 'utf-8'))
-    except:
+    except Exception as e:
+        print(e)
         return []
 
 def __constructSearchString(path):
@@ -46,7 +54,7 @@ def __constructSearchString(path):
     searchString = ""
 
     for key, val in pairs:
-        if val == '.git' or 'HEAD':
+        if val == '.git' or val == 'HEAD':
             pass
         elif key == 'authors':
             searchString += f'author:="{val}" '
