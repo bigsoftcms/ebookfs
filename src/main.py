@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 
-#    Copyright (C) 2006  Andrew Straw  <strawman@astraw.com>
-#
-#    This program can be distributed under the terms of the GNU LGPL.
-#    See the file COPYING.
-#
-
 import os, stat, errno
-# pull in some spaghetti to make this stuff work without fuse-py being installed
 import fuse
 from copy import deepcopy
 
@@ -20,9 +13,6 @@ if not hasattr(fuse, '__version__'):
     raise RuntimeError("your fuse-py doesn't know of fuse.__version__, probably it's too old.")
 
 fuse.fuse_python_api = (0, 2)
-
-hello_path = '/hello'
-hello_str = 'Hello World!\n'
 
 class MyStat(fuse.Stat):
     def __init__(self):
