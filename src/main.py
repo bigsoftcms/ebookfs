@@ -13,7 +13,7 @@ from copy import deepcopy
 
 from time import time
 from fuse import Fuse
-from search import search, allOfCategory, findBook
+from search import search, allOfCategory, find_book, all_books
 
 
 if not hasattr(fuse, '__version__'):
@@ -44,7 +44,8 @@ class EbookFS(Fuse):
         Fuse.__init__(self, *args, **kw)
         self.categories = {
             'authors': allOfCategory('authors'),
-            'tags': allOfCategory('tags')
+            'tags': allOfCategory('tags'),
+            'books': all_books()
         }
 
     def is_tag_or_author(self, val):
@@ -64,12 +65,20 @@ class EbookFS(Fuse):
             pass
         elif self.is_tag_or_author(split_path[-1]):
             pass
-        elif split_path[-1] in search(path)['books']:
+        elif split_path[-1] in self.categories['books']:
             st.st_mode = stat.S_IFREG | 0o666
             st.st_nlink = 1
         else:
              return -errno.ENOENT
         return st
+
+    def dedupe_results(self, results, pairs, key):
+        for key_, val in pairs:
+            if key_ == key and val in results:
+                results.remove(val)
+
+        return results
+
 
     def get_books(self, path):
         dirs = []
@@ -77,37 +86,39 @@ class EbookFS(Fuse):
 
         dirs = results.pop('books', [])
 
-        # if len(results['authors'].keys()) > 1:
-        #     dirs.append('authors')
-        # if len(results['tags'].keys()) > 0:
-        #     dirs.append('tags')
+        split_path = list(filter(None, path.split('/')))
+        pairs = list(zip(split_path[::2], split_path[1::2]))
+
+        for key in self.base_dir:
+            key_results = list(results[key].keys())
+            if len(self.dedupe_results(key_results, pairs, key)) > 0:
+                   dirs.append(key)
 
         return dirs
 
 
-    def info_dir(self, path):
-        dirs = []
-
+    def info_dir(self, split_path, key):
+        path = '/'.join(split_path[:-1])
         results = search(path)
+        key_results = list(results[key].keys())
 
-        split_path = path.split('/')[1:] # /authors
-        dirs.extend(results[split_path[-1]].keys())
+        pairs = list(zip(split_path[::2], split_path[1::2]))
 
-        return dirs
+        return self.dedupe_results(key_results, pairs, key)
 
     def readdir(self, path, offset):
         dirs = ['.', '..']
-        split_path = path.split('/')[1:]
+        split_path = list(filter(None, path.split('/')))
 
         if path == '/':
             dirs.extend(self.base_dir)
-        elif len(split_path) == 1 and split_path[0] in self.base_dir:
-            dirs.extend(self.categories[split_path[0]])
-        elif split_path[-2] in self.base_dir: # /authors/name
+        elif split_path[-1] in self.base_dir:
+            if len(split_path) == 1:
+                dirs.extend(self.categories[split_path[0]])
+            else:
+                dirs.extend(self.info_dir(split_path, split_path[-1]))
+        elif split_path[-2] in self.base_dir: # /authors/name | /tags/name
             dirs.extend(self.get_books(path))
-        elif split_path[-1] in self.base_dir: # /authors
-            # dirs.extend(self.info_dir(path, True))
-            pass
         else:
             pass
 

@@ -54,9 +54,7 @@ def __constructSearchString(path):
     searchString = ""
 
     for key, val in pairs:
-        if val == '.git' or val == 'HEAD':
-            pass
-        elif key == 'authors':
+        if key == 'authors':
             searchString += f'author:="{val}" '
         elif key == 'tags':
             searchString += f'tag:="{val}" '
@@ -91,7 +89,22 @@ def __getInfoFromSearch(books):
     }
 
 def search(path):
-    return __getInfoFromSearch(__callSearch(__constructSearchString(path)))
+    searchString = __constructSearchString(path)
+    if searchString != "":
+        return __getInfoFromSearch(__callSearch(searchString))
+    else:
+        return {
+            'authors': {},
+            'tags': {},
+            'books': []
+        }
 
-def findBook(title):
-    return __callSearch(f'title:="{title}"')
+def all_books():
+    books = __callSearch("")
+
+    return [b['title'] for b in books]
+
+def find_book(title):
+    books = __callSearch(f'title:="{title}"')
+
+    return [b['title'] for b in books]
