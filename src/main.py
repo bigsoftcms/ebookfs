@@ -42,6 +42,12 @@ class EbookFS(Fuse):
     def is_tag_or_author(self, val):
         return val in self.categories['authors'] or val in self.categories['tags']
 
+    def matching_format(self, filename, formats):
+        for book_format in formats:
+            if filename in book_format:
+                return book_format
+
+
     def getattr(self, path):
         st = MyStat()
         split_path = path.split('/')[1:]
@@ -52,14 +58,14 @@ class EbookFS(Fuse):
 
         if path == '/':
             pass
-        elif split_path[-1] in self.base_dir:
+        elif split_path[-1] in self.base_dir:  # /authors | /tags
             pass
-        elif self.is_tag_or_author(split_path[-1]):
+        elif self.is_tag_or_author(split_path[-1]): # /authors/Jim Butcher
             pass
-        elif split_path[-1] in self.categories['books']:
+        elif split_path[-1] in self.categories['books']: # /*/Changes
             pass
-        elif split_path[-2] in self.categories['books']:
-            st.st_mode = stat.S_IFREG | 0o666
+        elif split_path[-2] in self.categories['books']: # /*/Changes/*.epub
+            st.st_mode = stat.S_IFLNK | 0o655
             st.st_nlink = 1
         else:
              return -errno.ENOENT
@@ -105,18 +111,34 @@ class EbookFS(Fuse):
 
         if path == '/':
             dirs.extend(self.base_dir)
+
+        elif split_path[-1] in self.categories['books']:
+            book = find_book(split_path[-1])
+            for book_format in book['formats']:
+                dirs.append(book_format.split('/')[-1])
+
         elif split_path[-1] in self.base_dir:
-            if len(split_path) == 1:
+            if len(split_path) == 1: # /authors or /tags
                 dirs.extend(self.categories[split_path[0]])
-            else:
+            else: # /*/authors or /*/tags
                 dirs.extend(self.info_dir(split_path, split_path[-1]))
+
         elif split_path[-2] in self.base_dir: # /authors/name | /tags/name
             dirs.extend(self.get_books(path))
+
         else:
             pass
 
         for d in list(set(dirs)):
             yield fuse.Direntry(d)
+
+    def readlink(self, path):
+        split_path = list(filter(None, path.split('/')))
+
+        if split_path[-2] in self.categories['books']:
+            book = find_book(split_path[-2])
+
+            return self.matching_format(split_path[-1], book['formats'])
 
 
 def main():
