@@ -4,6 +4,7 @@ import os, stat, errno
 import fuse
 from copy import deepcopy
 
+import arrow
 from time import time
 from fuse import Fuse
 from search import search, allOfCategory, find_book, all_books
@@ -56,6 +57,8 @@ class EbookFS(Fuse):
         elif self.is_tag_or_author(split_path[-1]):
             pass
         elif split_path[-1] in self.categories['books']:
+            pass
+        elif split_path[-2] in self.categories['books']:
             st.st_mode = stat.S_IFREG | 0o666
             st.st_nlink = 1
         else:

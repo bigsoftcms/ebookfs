@@ -31,13 +31,13 @@ def allOfCategory(category):
         print(e)
         return []
 
-def __callSearch(searchStr):
+def __callSearch(searchStr, fields='title,authors,tags'):
     try:
         result = subprocess.check_output([
             'calibredb',
             'list',
             '--sort-by=title',
-            '-f title,authors,tags,formats',
+            f'-f {fields}',
             '--for-machine',
             '-s',
             searchStr
@@ -104,7 +104,11 @@ def all_books():
 
     return [b['title'] for b in books]
 
+@lru_cache(256)
 def find_book(title):
-    books = __callSearch(f'title:="{title}"')
+    try:
+        return __callSearch(f'title:="{title}"', 'all')[0]
+    except Exception as e:
+        print(e)
+        return []
 
-    return [b['title'] for b in books]
