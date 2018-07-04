@@ -67,7 +67,7 @@ class EbookFS(Fuse):
         elif split_path[-1] in self.base_dir: # /authors | /tags | /*/authors | /*/tags | /books
             return f'{split_path[-1].upper()}_RESULTS_DIR'
 
-        elif len(split_path) >= 2 and split_path[-2] in ['authors','tags']: # /authors/Jim Butcher | /tags/spooky
+        elif self.is_tag_or_author(split_path[-1]): # /authors/Jim Butcher | /tags/spooky
             base = split_path[-2][:-1].upper()
             return f'{base}_DIR'
 
