@@ -152,6 +152,7 @@ class EbookFS(Fuse):
 
         elif file_type == BOOK_DIR:
             book = find_book(split_path[-1])
+            dirs.append(book['cover'].split('/')[-1])
             for book_format in book['formats']:
                 dirs.append(book_format.split('/')[-1])
 
@@ -170,6 +171,8 @@ class EbookFS(Fuse):
         # Not using get_file_type as the only symlinks are BOOK_FILEs
         if len(split_path) >= 2 and split_path[-2] in self.categories['books']:
             book = find_book(split_path[-2])
+            if split_path[-1] in book['cover']:
+                return book['cover']
 
             return self.matching_format(split_path[-1], book['formats'])
 
