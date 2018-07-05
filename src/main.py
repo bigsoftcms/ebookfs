@@ -7,7 +7,7 @@ from copy import deepcopy
 import arrow
 from time import time
 from fuse import Fuse
-from search import search, allOfCategory, find_book, all_books
+from search import search, all_of_category, find_book, all_books
 
 ROOT = "ROOT"
 NONE= "NONE"
@@ -47,10 +47,18 @@ class EbookFS(Fuse):
     def __init__(self, *args, **kw):
         Fuse.__init__(self, *args, **kw)
         self.categories = {
-            'authors': allOfCategory('authors'),
-            'tags': allOfCategory('tags'),
+            'authors': all_of_category('authors'),
+            'tags': all_of_category('tags'),
             'books': all_books()
         }
+
+    def search(self, path):
+        results = search(path)
+
+        for key in self.categories.keys():
+            self.categories[key] = self.categories[key] | results[key]
+
+        return results
 
     def is_tag_or_author(self, val):
         return val in self.categories['authors'] or val in self.categories['tags']
@@ -93,15 +101,15 @@ class EbookFS(Fuse):
 
     def get_books(self, path):
         dirs = []
-        results = search(path)
+        results = self.search(path)
 
-        dirs = results.pop('books', [])
+        dirs = list(results.pop('books', []))
 
         split_path = list(filter(None, path.split('/')))
         pairs = list(zip(split_path[::2], split_path[1::2]))
 
         for key in ['authors','tags']:
-            key_results = list(results[key].keys())
+            key_results = list(results[key])
             if len(self.dedupe_results(key_results, pairs, key)) > 0:
                    dirs.append(key)
 
@@ -109,12 +117,11 @@ class EbookFS(Fuse):
 
     def info_dir(self, split_path, key):
         path = '/'.join(split_path[:-1])
-        results = search(path)
-        key_results = list(results[key].keys())
+        results = self.search(path)
 
         pairs = list(zip(split_path[::2], split_path[1::2]))
 
-        return self.dedupe_results(key_results, pairs, key)
+        return self.dedupe_results(list(results[key]), pairs, key)
 
     def getattr(self, path):
         st = MyStat()

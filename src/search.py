@@ -7,7 +7,7 @@ from functools import reduce
 from io import StringIO
 from functools import lru_cache
 
-def allOfCategory(category):
+def all_of_category(category):
     try:
         output = str(
             subprocess.check_output(['calibredb', 'list_categories', '-c', '-r', category]),
@@ -25,13 +25,13 @@ def allOfCategory(category):
         for row in reader:
             result.append(row[1])
 
-        return result[1:]
+        return set(result[1:])
 
     except Exception as e:
         print(e)
         return []
 
-def __callSearch(searchStr, fields='title,authors,tags'):
+def __call_search(search_str, fields='title,authors,tags'):
     try:
         result = subprocess.check_output([
             'calibredb',
@@ -40,7 +40,7 @@ def __callSearch(searchStr, fields='title,authors,tags'):
             f'-f {fields}',
             '--for-machine',
             '-s',
-            searchStr
+            search_str
         ])
 
         return json.loads(str(result, 'utf-8'))
@@ -48,50 +48,53 @@ def __callSearch(searchStr, fields='title,authors,tags'):
         print(e)
         return []
 
-def __constructSearchString(path):
-    splitPath = list(filter(None, path.split('/')))
-    pairs = list(zip(splitPath[::2], splitPath[1::2]))
-    searchString = ""
+def __construct_search_string(path):
+    split_path = list(filter(None, path.split('/')))
+    pairs = list(zip(split_path[::2], split_path[1::2]))
+    search_string = ""
 
     for key, val in pairs:
         if key == 'authors':
-            searchString += f'author:="{val}" '
+            search_string += f'author:="{val}" '
         elif key == 'tags':
-            searchString += f'tag:="{val}" '
+            search_string += f'tag:="{val}" '
 
-    return searchString
+    return search_string
 
-def __addBookToSet(val, book):
+def __add_book_to_set(val, book):
     if val != None:
         val.add(book['title'])
     else:
         val = set([book['title']])
     return val
 
-def __getInfoFromSearch(books):
-    allAuthors = {}
-    allTags = {}
-    allTitles = []
+def __get_info_from_search(books):
+    all_authors = set()
+    all_tags = set()
+    all_titles = set()
 
     for book in books:
-        allTitles.append(book['title'])
+        all_titles.add(book['title'])
 
         for author in book['authors'].split(' & '):
-            allAuthors[author] = __addBookToSet(allAuthors.get(author), book)
+            all_authors.add(author)
 
         for tag in book['tags']:
-            allTags[tag] = __addBookToSet(allTags.get(tag), book)
+            all_tags.add(tag)
 
     return {
-        'authors': allAuthors,
-        'tags': allTags,
-        'books': allTitles
+        'authors': all_authors,
+        'tags': all_tags,
+        'books': all_titles
     }
 
 def search(path):
-    searchString = __constructSearchString(path)
-    if searchString != "":
-        return __getInfoFromSearch(__callSearch(searchString))
+    search_string = __construct_search_string(path)
+
+    if search_string != "":
+        return __get_info_from_search(
+            __call_search(search_string)
+        )
     else:
         return {
             'authors': {},
@@ -100,14 +103,14 @@ def search(path):
         }
 
 def all_books():
-    books = __callSearch("")
+    books = __call_search("")
 
-    return [b['title'] for b in books]
+    return set([b['title'] for b in books])
 
 @lru_cache(256)
 def find_book(title):
     try:
-        return __callSearch(f'title:="{title}"', 'all')[0]
+        return __call_search(f'title:="{title}"', 'all')[0]
     except Exception as e:
         print(e)
         return []
