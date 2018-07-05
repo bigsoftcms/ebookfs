@@ -123,6 +123,8 @@ class EbookFS(Fuse):
 
         return self.dedupe_results(list(results[key]), pairs, key)
 
+    ##--- File system methods ---##
+
     def getattr(self, path):
         st = MyStat()
         split_path = path.split('/')[1:]
@@ -178,6 +180,7 @@ class EbookFS(Fuse):
         # Not using get_file_type as the only symlinks are BOOK_FILEs
         if len(split_path) >= 2 and split_path[-2] in self.categories['books']:
             book = find_book(split_path[-2])
+
             if split_path[-1] in book['cover']:
                 return book['cover']
 
