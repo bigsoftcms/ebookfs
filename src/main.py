@@ -1,196 +1,143 @@
 #!/usr/bin/env python3
 
-import os, stat, errno
+import os, stat, errno, functools, operator
 import fuse
-from copy import deepcopy
 
-import arrow
-from time import time
-from fuse import Fuse
+from const import *
+from utils import *
+from fuse_stat import MyStat
 from search import search, all_of_category, find_book, all_books
-
-ROOT = "ROOT"
-NONE= "NONE"
-UNDEFINED = "UNDEFINED"
-
-AUTHORS_RESULTS_DIR = "AUTHORS_RESULTS_DIR"
-TAGS_RESULTS_DIR = "TAGS_RESULTS_DIR"
-BOOKS_RESULTS_DIR = "BOOKS_RESULTS_DIR"
-
-AUTHOR_DIR = "AUTHOR_DIR"
-TAG_DIR = "TAG_DIR"
-BOOK_DIR = "BOOK_DIR"
-
-BOOK_FILE = "BOOK_FILE"
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError("your fuse-py doesn't know of fuse.__version__, probably it's too old.")
 
 fuse.fuse_python_api = (0, 2)
 
-class MyStat(fuse.Stat):
-    def __init__(self):
-        self.st_mode = stat.S_IFDIR | 0o755
-        self.st_ino = 0
-        self.st_dev = 0
-        self.st_nlink = 2
-        self.st_uid = 0
-        self.st_gid = 0
-        self.st_size = 4096
-        self.st_atime = 0
-        self.st_mtime = 0
-        self.st_ctime = 0
+is_tag_or_author = functools.partial(in_dict, ['authors', 'tags'])
+is_git = functools.partial(in_list, ["HEAD", ".git"])
+is_base_dir = functools.partial(in_list, BASE_DIR_DIRS)
 
-class EbookFS(Fuse):
-    base_dir = ['authors', 'books', 'tags']
+def get_file_type(path, categories):
+    split_path = get_split_path(path)
+    last = split_path[-1] if len(split_path) >= 1 else ""
+    second_last = split_path[-2] if len(split_path) >= 2 else ""
 
+    in_books = functools.partial(in_list, categories["books"])
+
+    return cond(
+        (path == '/', ROOT),
+        (is_git(last), UNDEFINED),
+        (is_base_dir(last), f'{last.upper()}_RESULTS_DIR'),
+        (is_tag_or_author(categories, last), f'{second_last[:-1].upper()}_DIR'),
+        (in_books(last), BOOK_DIR),
+        (in_books(second_last), BOOK_FILE),
+        (True, UNDEFINED)
+    )
+
+def dedupe_results(results, path, key):
+    pairs = get_path_pairs(path)
+    for key_, val in pairs:
+        if key_ == key and val in results:
+            results.remove(val)
+
+    return results
+
+def matching_format(filename, formats):
+    for book_format in formats:
+        if filename in book_format:
+            return book_format
+
+
+search_key = lambda key, path : compose(list, lambda x : x.pop(key, []), search)(path)
+
+def get_books(path):
+    results = search(path)
+    dirs = list(results.pop('books'))
+
+    # this ensures that we don't have author or tag directories if there are none
+    for key in ['authors','tags']:
+        key_results = list(results[key])
+        if len(dedupe_results(key_results, path, key)) > 0:
+               dirs.append(key)
+
+    return dirs
+
+info_dir = lambda path, key: dedupe_results(search_key(key, path), path, key)
+add_fuse_dirs = lambda dirs : [(yield fuse.Direntry(d)) for d in dirs]
+
+class EbookFS(fuse.Fuse):
     def __init__(self, *args, **kw):
-        Fuse.__init__(self, *args, **kw)
+        fuse.Fuse.__init__(self, *args, **kw)
         self.categories = {
             'authors': all_of_category('authors'),
             'tags': all_of_category('tags'),
             'books': all_books()
         }
 
-    def search(self, path):
-        results = search(path)
-
-        for key in self.categories.keys():
-            self.categories[key] = self.categories[key] | results[key]
-
-        return results
-
-    def is_tag_or_author(self, val):
-        return val in self.categories['authors'] or val in self.categories['tags']
-
-    def get_file_type(self, path):
-        split_path = path.split('/')[1:]
-
-        if path == '/':
-            return ROOT
-
-        elif split_path[-1] in ["HEAD", ".git"]:
-            return UNDEFINED
-
-        elif split_path[-1] in self.base_dir: # /authors | /tags | /*/authors | /*/tags | /books
-            return f'{split_path[-1].upper()}_RESULTS_DIR'
-
-        elif self.is_tag_or_author(split_path[-1]): # /authors/Jim Butcher | /tags/spooky
-            base = split_path[-2][:-1].upper()
-            return f'{base}_DIR'
-
-        elif split_path[-1] in self.categories['books']: # /*/Changes
-            return BOOK_DIR
-
-        elif len(split_path) >= 2 and split_path[-2] in self.categories['books']: # /*/Changes/*
-            return BOOK_FILE
-
-        return NONE
-
-    def matching_format(self, filename, formats):
-        for book_format in formats:
-            if filename in book_format:
-                return book_format
-
-    def dedupe_results(self, results, pairs, key):
-        for key_, val in pairs:
-            if key_ == key and val in results:
-                results.remove(val)
-
-        return results
-
-    def get_books(self, path):
-        dirs = []
-        results = self.search(path)
-
-        dirs = list(results.pop('books', []))
-
-        split_path = list(filter(None, path.split('/')))
-        pairs = list(zip(split_path[::2], split_path[1::2]))
-
-        for key in ['authors','tags']:
-            key_results = list(results[key])
-            if len(self.dedupe_results(key_results, pairs, key)) > 0:
-                   dirs.append(key)
-
-        return dirs
-
-    def info_dir(self, split_path, key):
-        path = '/'.join(split_path[:-1])
-        results = self.search(path)
-
-        pairs = list(zip(split_path[::2], split_path[1::2]))
-
-        return self.dedupe_results(list(results[key]), pairs, key)
+        self.previous_path = None
+        self.previous_results = None
 
     ##--- File system methods ---##
-
     def getattr(self, path):
-        st = MyStat()
-        split_path = path.split('/')[1:]
+        file_type = get_file_type(path, self.categories)
 
-        st.st_atime = int(time())
-        st.st_mtime = st.st_atime
-        st.st_ctime = st.st_atime
-
-        file_type = self.get_file_type(path)
-
-        if file_type in [NONE, UNDEFINED]:
+        if file_type == UNDEFINED:
             return -errno.ENOENT
 
-        elif file_type == BOOK_FILE:
-            st.st_mode = stat.S_IFLNK | 0o655
-            st.st_nlink = 1
-
-        return st
+        args = [stat.S_IFLNK, 0o655] if file_type == BOOK_FILE else []
+        return MyStat(*args)
 
     def readdir(self, path, offset):
-        dirs = ['.', '..']
-        split_path = list(filter(None, path.split('/')))
+        yield from add_fuse_dirs(['.', '..'])
 
-        file_type = self.get_file_type(path)
+        file_type = get_file_type(path, self.categories)
 
         if file_type == ROOT:
-            dirs.extend(self.base_dir)
+            yield from add_fuse_dirs(BASE_DIR_DIRS)
 
-        elif file_type in [AUTHORS_RESULTS_DIR,BOOKS_RESULTS_DIR,TAGS_RESULTS_DIR]:
-            if len(split_path) == 1: # /authors | /tags | /books
-                dirs.extend(self.categories[split_path[-1]])
-            else: # /*/authors | /*/tags
-                dirs.extend(self.info_dir(split_path, split_path[-1]))
+        elif file_type in RESULT_DIRS:
+            split_path = get_split_path(path)
+            last_val = split_path[-1]
+
+            dirs = self.categories[last_val] if len(split_path) == 1 else info_dir(path, last_val)
+            yield from add_fuse_dirs(dirs)
+
 
         elif file_type == BOOK_DIR:
+            split_path = get_split_path(path)
             book = find_book(split_path[-1])
-            dirs.append(book['cover'].split('/')[-1])
-            for book_format in book['formats']:
-                dirs.append(book_format.split('/')[-1])
+            cover_file = book['cover'].split('/')[-1]
+            format_files = map(lambda fmt : fmt.split('/')[-1], book['formats'])
+
+            yield from add_fuse_dirs([cover_file, *format_files])
 
         elif file_type in [AUTHOR_DIR,TAG_DIR]:
-            dirs.extend(self.get_books(path))
+            yield from add_fuse_dirs(get_books(path))
 
         else:
             pass
 
-        for d in list(set(dirs)):
-            yield fuse.Direntry(d)
-
     def readlink(self, path):
-        split_path = list(filter(None, path.split('/')))
-
         # Not using get_file_type as the only symlinks are BOOK_FILEs
-        if len(split_path) >= 2 and split_path[-2] in self.categories['books']:
-            book = find_book(split_path[-2])
+        split_path = get_split_path(path)
+        book_name = split_path[-2] if len(split_path) >= 2 else ""
 
-            if split_path[-1] in book['cover']:
-                return book['cover']
+        if book_name not in self.categories['books']:
+            return
 
-            return self.matching_format(split_path[-1], book['formats'])
+        book = find_book(book_name)
+        cover = book['cover'] if 'cover' in book.keys() else ""
+
+        if split_path[-1] in cover:
+            return cover
+
+        return matching_format(split_path[-1], book['formats'])
 
 
 def main():
     usage="""
 Userspace hello example
-""" + Fuse.fusage
+""" + fuse.Fuse.fusage
 
     server = EbookFS(version="%prog " + fuse.__version__,
                      usage=usage,
