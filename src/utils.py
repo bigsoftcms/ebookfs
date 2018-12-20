@@ -2,16 +2,6 @@ import functools
 import sys
 import collections
 
-def compose(*functions):
-    return functools.reduce(lambda f, g: lambda x: f(g(x)), functions, lambda x: x)
-
-def cond (*branches):
-    for branch in branches:
-        condition, action = branch
-
-        if not condition == False or condition == None:
-            return action
-
 def catch(default):
     def decorator(func):
         def safe(*args, **kwargs):
@@ -22,6 +12,16 @@ def catch(default):
                 return default
         return safe
     return decorator
+
+def compose(*functions):
+    return functools.reduce(lambda f, g: lambda x: f(g(x)), functions, lambda x: x)
+
+def cond (*branches):
+    for branch in branches:
+        condition, action = branch
+
+        if not condition == False or condition == None:
+            return action
 
 def flatten(l):
     for el in l:
@@ -38,7 +38,6 @@ in_dict = lambda keys, obj, val : functools.reduce(
     False
 )
 
-get_split_path = lambda path : list(filter(None, path.split('/')))
-
+get_split_path = compose(list, functools.partial(filter, None), lambda x: x.split('/'))
 zip_alt = lambda lst: zip(lst[::2], lst[1::2])
 get_path_pairs = compose(list, zip_alt, get_split_path)

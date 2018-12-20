@@ -55,7 +55,7 @@ book_to_info = lambda book : (book['title'], book['authors'].split(' & '), book[
 __get_info_from_search = compose(
     dict,
     functools.partial(zip, ['books', 'authors', 'tags']),
-    functools.partial(map, compose(list, set, flatten, list)), # turn into list so flatten works
+    functools.partial(map, compose(set, flatten, list)), # turn into list so flatten works
     lambda l : zip(*l), # [(a,b), (x, y)] -> [(a,x), (b,y)]
     functools.partial(map, book_to_info)
 )
