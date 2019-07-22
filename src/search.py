@@ -13,7 +13,7 @@ __construct_search_string = utils.compose(
     utils.get_path_pairs
 )
 
-all_same = lambda it: it.count(it[0]) == len(it)
+all_same = lambda it: [key for key in set(utils.flatten(it)) if not all([key in l for l in it])]
 
 def __get_info_from_search(books):
     titles = [book['title'] for book in books]
@@ -21,10 +21,8 @@ def __get_info_from_search(books):
     tags = [book['tags'] for book in books]
 
     return {
-        'all_same_authors': all_same(authors),
-        'all_same_tags': all_same(tags),
-        'authors': set(utils.flatten(authors)),
-        'tags': set(utils.flatten(tags)),
+        'authors': set(all_same(authors)),
+        'tags': set(all_same(tags)),
         'books': set(titles),
     }
 
@@ -36,8 +34,6 @@ def search(path):
         return __get_info_from_search(calibre.search(search_string))
     else:
         return {
-            'all_same_authors': False,
-            'all_same_tags': False,
             'authors': {},
             'tags': {},
             'books': {}
@@ -49,5 +45,4 @@ def all_books():
 
 def find_book(title):
     return calibre.search(f'title:="{title}"', 'all')[0]
-
 
